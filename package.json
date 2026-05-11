@@ -1,0 +1,29 @@
+{
+  "name": "medicold-integrasi-sistem-mqtt",
+  "version": "1.0.0",
+  "description": "Smart cold storage integration over MQTT with streaming telemetry and retained messages.",
+  "main": "src/server/core.js",
+  "scripts": {
+    "broker": "docker compose up broker",
+    "start": "node src/server/core.js",
+    "admin": "node src/client/admin.js",
+    "sensor": "node src/client/sensor.js",
+    "dashboard": "node src/client/dashboard.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "mqtt",
+    "cold-storage",
+    "iot",
+    "retain-message",
+    "streaming"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.4"
+  }
+}
