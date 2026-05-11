@@ -31,6 +31,7 @@ function validateBatch(payload) {
     quantity,
     expiry_date: String(payload.expiry_date || "").trim(),
     notes: String(payload.notes || "").trim(),
+    replace_existing: payload.replace_existing === true,
   };
 }
 

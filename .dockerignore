@@ -1,6 +1,7 @@
-dist/
 node_modules/
-.vite/
+dist/
+.git/
+.gitignore
+.DS_Store
 npm-debug.log*
 .env
-.DS_Store

@@ -17,6 +17,8 @@ const topics = {
     telemetryStream: `${ROOT}/+/telemetry/stream`,
     inventoryRegister: `${ROOT}/+/inventory/commands/register`,
     resolveAlert: `${ROOT}/system/alerts/commands/resolve`,
+    boxUpsert: `${ROOT}/system/boxes/commands/upsert`,
+    boxDelete: `${ROOT}/system/boxes/commands/delete`,
   },
 
   telemetryStream(fridgeId) {
@@ -45,6 +47,22 @@ const topics = {
 
   inventorySnapshot(fridgeId) {
     return `${ROOT}/${topicFridgeId(fridgeId)}/inventory/snapshot`;
+  },
+
+  boxSnapshot(fridgeId) {
+    return `${ROOT}/${topicFridgeId(fridgeId)}/box/snapshot`;
+  },
+
+  boxesSnapshot() {
+    return `${ROOT}/system/boxes/snapshot`;
+  },
+
+  boxUpsertCommand() {
+    return `${ROOT}/system/boxes/commands/upsert`;
+  },
+
+  boxDeleteCommand() {
+    return `${ROOT}/system/boxes/commands/delete`;
   },
 
   resolveAlertCommand() {

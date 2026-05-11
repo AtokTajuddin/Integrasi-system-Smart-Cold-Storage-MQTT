@@ -7,6 +7,7 @@ const BROKER_URL = process.env.MQTT_BROKER_URL || "mqtt://localhost:1883";
 
 function createMqttClient(clientId, options = {}) {
   return mqtt.connect(BROKER_URL, {
+    protocolVersion: 5,
     clean: options.clean ?? true,
     clientId,
     connectTimeout: 5000,

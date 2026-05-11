@@ -2,6 +2,7 @@ services:
   broker:
     image: eclipse-mosquitto:2
     container_name: medicold-mqtt-broker
+    restart: unless-stopped
     ports:
       - "1883:1883"
       - "9001:9001"
@@ -9,6 +10,45 @@ services:
       - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mosquitto-data:/mosquitto/data
       - mosquitto-log:/mosquitto/log
+
+  core:
+    build:
+      context: .
+    container_name: medicold-core
+    restart: unless-stopped
+    depends_on:
+      - broker
+    environment:
+      MQTT_BROKER_URL: mqtt://broker:1883
+      MQTT_TOPIC_ROOT: medicold
+    command: pnpm start
+
+  dashboard:
+    build:
+      context: .
+    container_name: medicold-dashboard
+    restart: unless-stopped
+    depends_on:
+      - broker
+      - core
+    ports:
+      - "5173:5173"
+    environment:
+      MQTT_TOPIC_ROOT: medicold
+    command: pnpm dashboard:web:preview --port 5173
+
+  dummy-sender:
+    build:
+      context: .
+    container_name: medicold-dummy-sender
+    restart: unless-stopped
+    depends_on:
+      - broker
+      - core
+    environment:
+      MQTT_BROKER_URL: mqtt://broker:1883
+      MQTT_TOPIC_ROOT: medicold
+    command: pnpm dummy:sender
 
 volumes:
   mosquitto-data:

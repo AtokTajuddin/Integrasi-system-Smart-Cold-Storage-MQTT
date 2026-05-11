@@ -57,6 +57,18 @@ async function publishAlertState(fridgeId) {
   );
 }
 
+async function publishBoxesSnapshot() {
+  await publishJson(
+    client,
+    topics.boxesSnapshot(),
+    withEnvelope("boxes.snapshot", {
+      boxes: store.getBoxes(),
+      total_count: store.getBoxes().length,
+    }),
+    { qos: 1, retain: true },
+  );
+}
+
 async function handleTelemetry(topic, message) {
   const reading = {
     ...message,
@@ -153,6 +165,89 @@ async function handleResolveAlert(message) {
   }
 }
 
+function normalizeBox(payload) {
+  const input = payload.box || payload;
+  const fridgeId = String(input.fridge_id || input.fridgeId || "").trim().toUpperCase();
+
+  if (!fridgeId) {
+    throw new Error("fridge_id box wajib diisi");
+  }
+
+  return {
+    fridge_id: fridgeId.replaceAll("/", "-").replaceAll(" ", "-"),
+    location: String(input.location || "Medical Storage").trim(),
+    medical_content: String(input.medical_content || input.medicalContent || "OTHER")
+      .trim()
+      .toUpperCase()
+      .replaceAll("-", "_")
+      .replaceAll(" ", "_"),
+    base_temperature: Number(input.base_temperature ?? input.baseTemperature ?? 4.5),
+  };
+}
+
+async function handleBoxUpsert(message) {
+  try {
+    const box = store.upsertBox(normalizeBox(message));
+
+    await publishJson(
+      client,
+      topics.boxSnapshot(box.fridge_id),
+      withEnvelope("box.snapshot", box),
+      { qos: 1, retain: true },
+    );
+
+    await publishBoxesSnapshot();
+
+    await publishResponse(message.reply_to, message.correlation_id, {
+      ok: true,
+      result: box,
+    });
+  } catch (error) {
+    await publishResponse(message.reply_to, message.correlation_id, {
+      ok: false,
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: error.message,
+      },
+    });
+  }
+}
+
+async function handleBoxDelete(message) {
+  const fridgeId = String(message.fridge_id || message.fridgeId || "")
+    .trim()
+    .toUpperCase()
+    .replaceAll("/", "-")
+    .replaceAll(" ", "-");
+
+  if (!fridgeId) {
+    await publishResponse(message.reply_to, message.correlation_id, {
+      ok: false,
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: "fridge_id box wajib diisi",
+      },
+    });
+    return;
+  }
+
+  const result = store.deleteBox(fridgeId);
+
+  await publishJson(
+    client,
+    topics.boxSnapshot(fridgeId),
+    withEnvelope("box.deleted", result),
+    { qos: 1, retain: true },
+  );
+
+  await publishBoxesSnapshot();
+
+  await publishResponse(message.reply_to, message.correlation_id, {
+    ok: true,
+    result,
+  });
+}
+
 async function handleMessage(topic, payload) {
   let message;
 
@@ -181,6 +276,18 @@ async function handleMessage(topic, payload) {
 
     if (parsed.scope === "system" && parsed.domain === "alerts" && parsed.kind === "commands") {
       await handleResolveAlert(message);
+      return;
+    }
+
+    if (parsed.scope === "system" && parsed.domain === "boxes" && parsed.kind === "commands") {
+      if (parsed.action === "upsert") {
+        await handleBoxUpsert(message);
+        return;
+      }
+
+      if (parsed.action === "delete") {
+        await handleBoxDelete(message);
+      }
     }
   } catch (error) {
     console.error(`Gagal memproses topic ${topic}: ${error.message}`);
@@ -204,11 +311,15 @@ async function main() {
   await subscribe(client, topics.patterns.telemetryStream);
   await subscribe(client, topics.patterns.inventoryRegister);
   await subscribe(client, topics.patterns.resolveAlert);
+  await subscribe(client, topics.patterns.boxUpsert);
+  await subscribe(client, topics.patterns.boxDelete);
 
   console.log("Medicold MQTT core is ready");
   console.log(`Subscribed: ${topics.patterns.telemetryStream}`);
   console.log(`Subscribed: ${topics.patterns.inventoryRegister}`);
   console.log(`Subscribed: ${topics.patterns.resolveAlert}`);
+  console.log(`Subscribed: ${topics.patterns.boxUpsert}`);
+  console.log(`Subscribed: ${topics.patterns.boxDelete}`);
 }
 
 client.on("message", handleMessage);

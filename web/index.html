@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Medicold MQTT Dashboard</title>
+  </head>
+  <body>
+    <div class="medical-bg" aria-hidden="true">
+      <span class="medical-cross cross-a"></span>
+      <span class="medical-cross cross-b"></span>
+      <span class="medical-cross cross-c"></span>
+      <span class="medical-wave wave-a"></span>
+      <span class="medical-wave wave-b"></span>
+    </div>
+    <div id="app" class="dashboard-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span class="mark-cross"></span>
+            <span class="mark-core"></span>
+          </div>
+          <div>
+            <p class="eyebrow">Medicold</p>
+            <h1>Cold Chain Command Center</h1>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="status-pill" id="connection-status">
+            <span></span>
+            Disconnected
+          </div>
+          <button id="settings-button" type="button" class="secondary">Connection</button>
+        </div>
+      </header>
+
+      <main class="main-panel">
+        <section class="hero-grid" aria-label="Cold storage overview">
+          <div class="scene-panel">
+            <div class="scene-copy">
+              <p class="eyebrow">Live Cold Chain</p>
+              <h2 id="scene-title">Waiting for MQTT telemetry</h2>
+              <p id="scene-subtitle">Sender services publish dummy data, dashboard only receives.</p>
+            </div>
+
+            <div class="cold-scene" aria-hidden="true">
+              <div class="frost-field">
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <div class="cold-orbit orbit-a"></div>
+              <div class="cold-orbit orbit-b"></div>
+              <div class="cold-orbit orbit-c"></div>
+              <div class="cold-stage" id="cold-stage">
+                <div class="cold-chamber">
+                  <div class="chamber-face chamber-front">
+                    <div class="scanner-beam" id="scanner-beam"></div>
+                    <div class="chamber-door">
+                      <div class="door-line"></div>
+                      <div class="door-handle"></div>
+                      <div class="temp-glow" id="temp-glow"></div>
+                      <div class="status-module normal" id="storage-status-module">
+                        <span></span>
+                        <strong id="storage-status-label">NORMAL</strong>
+                      </div>
+                    </div>
+                    <div class="sensor-column">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
+                  <div class="chamber-face chamber-right"></div>
+                  <div class="chamber-face chamber-top"></div>
+                </div>
+              </div>
+              <div class="data-packet packet-a"></div>
+              <div class="data-packet packet-b"></div>
+              <div class="data-packet packet-c"></div>
+              <div class="data-packet packet-d"></div>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <article class="summary-card">
+              <span>Fridges</span>
+              <strong id="fridge-count">0</strong>
+            </article>
+            <article class="summary-card">
+              <span>Avg Temp</span>
+              <strong id="avg-temp">--</strong>
+            </article>
+            <article class="summary-card">
+              <span>Open Alerts</span>
+              <strong id="open-alert-count">0</strong>
+            </article>
+            <article class="summary-card">
+              <span>Core</span>
+              <strong id="core-status">DEMO</strong>
+            </article>
+            <article class="summary-card">
+              <span>Retained</span>
+              <strong id="retained-count">0</strong>
+            </article>
+            <article class="summary-card">
+              <span>Live Events</span>
+              <strong id="live-count">0</strong>
+            </article>
+          </div>
+        </section>
+
+        <section class="content-grid">
+          <div class="panel telemetry-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Telemetry</p>
+                <h3>Fridge Status</h3>
+              </div>
+              <button id="clear-events-button" type="button" class="secondary small">Clear Logs</button>
+            </div>
+            <div id="fridge-grid" class="fridge-grid empty-state">No fridge data</div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Sensor Logs</p>
+                <h3>Dummy Stream</h3>
+              </div>
+            </div>
+            <div id="sensor-log" class="sensor-log empty-state">No sensor logs</div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Medicold Boxes</p>
+                <h3>Box Registry</h3>
+              </div>
+              <button id="add-box-button" type="button" class="secondary small">Add Box</button>
+            </div>
+            <form id="box-form" class="box-form" hidden>
+              <input id="box-id-input" name="box-id" placeholder="FRIDGE-D" autocomplete="off" />
+              <input id="box-location-input" name="box-location" placeholder="Storage location" autocomplete="off" />
+              <input id="box-content-input" name="box-content" placeholder="VACCINE" autocomplete="off" />
+              <input id="box-temp-input" name="box-temp" placeholder="4.5" inputmode="decimal" autocomplete="off" />
+              <div class="button-row">
+                <button id="save-box-button" type="submit">Save Box</button>
+                <button id="cancel-box-button" type="button" class="secondary">Cancel</button>
+              </div>
+            </form>
+            <div id="box-list" class="box-list empty-state">No medicold boxes</div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Alerts</p>
+                <h3>Live Queue</h3>
+              </div>
+            </div>
+            <div id="alert-list" class="alert-list empty-state">No alerts</div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Inventory</p>
+                <h3>Dummy Retained Snapshot</h3>
+              </div>
+            </div>
+            <div id="inventory-list" class="inventory-list empty-state">No inventory snapshot</div>
+          </div>
+
+          <div class="panel event-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">MQTT Traffic</p>
+                <h3>Recent Events</h3>
+              </div>
+            </div>
+            <div id="event-log" class="event-log empty-state">No messages received</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="settings-backdrop" class="settings-backdrop" hidden></div>
+    <aside id="settings-drawer" class="settings-drawer" aria-label="Connection settings" aria-hidden="true">
+      <div class="drawer-header">
+        <div>
+          <p class="section-kicker">Communication</p>
+          <h2>Connection Settings</h2>
+        </div>
+        <button id="close-settings-button" type="button" class="secondary small">Close</button>
+      </div>
+
+      <form id="connection-form" class="connection-form">
+        <label>
+          Broker WebSocket
+          <input id="broker-url" name="broker-url" placeholder="ws://localhost:9001" autocomplete="off" />
+        </label>
+        <label>
+          Topic Root
+          <input id="topic-root" name="topic-root" value="medicold" autocomplete="off" />
+        </label>
+        <label>
+          Fridge Filter
+          <input id="fridge-filter" name="fridge-filter" value="" placeholder="FRIDGE-A,FRIDGE-B" autocomplete="off" />
+        </label>
+        <div class="button-row">
+          <button id="connect-button" type="submit">Connect MQTT</button>
+          <button id="disconnect-button" type="button" class="secondary" disabled>Disconnect</button>
+        </div>
+      </form>
+
+      <section class="settings-note">
+        <p class="section-kicker">Mode</p>
+        <p>
+          Dashboard only receives MQTT snapshots and live events. Dummy data is published by sender services,
+          then processed by the core service before it reaches this receiver.
+        </p>
+      </section>
+    </aside>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

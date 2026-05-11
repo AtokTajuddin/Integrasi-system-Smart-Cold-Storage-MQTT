@@ -7,6 +7,7 @@ Fokus implementasi:
 - **Streaming communication:** sensor mengirim telemetry secara kontinu ke topic MQTT.
 - **Tetap ada communication/request-response:** admin dan dashboard mengirim command dengan `correlation_id` dan `reply_to`.
 - **Retain Message:** snapshot terakhir disimpan oleh broker agar subscriber baru langsung menerima kondisi terkini.
+- **Web dashboard:** monitoring MQTT via WebSocket dengan Vite dan Anime.js.
 
 Repo referensi tugas sebelumnya: <https://github.com/MFaqihRidh0/Integrasi-system-Smart-Cold-Storage>
 
@@ -51,6 +52,10 @@ medicold/{id}/inventory/snapshot
 | `medicold/{fridgeId}/alerts/latest` | Core -> Dashboard | `true` | Alert aktif terakhir, atau state bahwa tidak ada alert aktif. |
 | `medicold/{fridgeId}/inventory/commands/register` | Admin -> Core | `false` | Command pendaftaran batch medis. |
 | `medicold/{fridgeId}/inventory/snapshot` | Core -> Admin/Dashboard | `true` | Snapshot inventory terakhir. |
+| `medicold/system/boxes/commands/upsert` | Dashboard/Sender -> Core | `false` | Command tambah atau update Medicold Box. |
+| `medicold/system/boxes/commands/delete` | Dashboard -> Core | `false` | Command hapus Medicold Box. |
+| `medicold/{fridgeId}/box/snapshot` | Core -> Dashboard | `true` | Snapshot detail box per fridge. |
+| `medicold/system/boxes/snapshot` | Core -> Dashboard | `true` | Snapshot daftar Medicold Box. |
 | `medicold/system/alerts/commands/resolve` | Dashboard -> Core | `false` | Command resolve alert. |
 | `medicold/replies/{clientId}` | Core -> Client | `false` | Response command berbasis `correlation_id`. |
 
@@ -66,6 +71,7 @@ Catatan penting: command tidak dibuat retained supaya command lama tidak terekse
 |   |-- client/
 |   |   |-- admin.js
 |   |   |-- dashboard.js
+|   |   |-- dummy_sender.js
 |   |   `-- sensor.js
 |   |-- server/
 |   |   |-- core.js
@@ -82,6 +88,11 @@ Catatan penting: command tidak dibuat retained supaya command lama tidak terekse
 |-- test/
 |   |-- anomaly.test.js
 |   `-- inventory.test.js
+|-- web/
+|   |-- index.html
+|   `-- src/
+|       |-- main.js
+|       `-- styles.css
 |-- docker-compose.yml
 |-- package.json
 `-- README.md
@@ -89,34 +100,91 @@ Catatan penting: command tidak dibuat retained supaya command lama tidak terekse
 
 ## Cara Menjalankan
 
+Cara paling enak untuk menjalankan semua service:
+
+```bash
+docker compose up --build
+```
+
+Service yang akan naik:
+
+| Service | URL/Port | Fungsi |
+|---|---|---|
+| `broker` | `1883`, `9001` | Mosquitto MQTT + WebSocket MQTT |
+| `core` | internal Docker | MQTT core service, subscribe telemetry dan publish retained snapshot |
+| `dummy-sender` | internal Docker | Publisher dummy untuk box registry, inventory command, dan telemetry stream |
+| `dashboard` | `http://localhost:5173` | Dashboard web Vite + Anime.js |
+
+Dummy data tidak dibuat di DOM/browser. Service `dummy-sender` mengirim data melalui MQTT, `core` menerima dan memprosesnya, lalu dashboard hanya menjadi receiver untuk retained snapshot dan live event.
+
+Stop semua service:
+
+```bash
+docker compose down
+```
+
+### Menjalankan Manual
+
 Install dependency:
 
 ```bash
-npm install
+pnpm install
+```
+
+Jika `pnpm` belum terpasang:
+
+```bash
+npx pnpm@11.0.9 install
 ```
 
 Jalankan broker MQTT lokal:
 
 ```bash
-docker compose up broker
+pnpm broker
 ```
 
 Di terminal lain, jalankan core service:
 
 ```bash
-npm start
+pnpm start
 ```
 
-Jalankan dashboard untuk melihat retained snapshot dan live stream:
+Jalankan dashboard web:
 
 ```bash
-npm run dashboard -- --watch --fridge-ids FRIDGE-A,FRIDGE-B --min-level INFO
+pnpm dashboard:web
+```
+
+Jalankan dummy sender MQTT:
+
+```bash
+pnpm dummy:sender
+```
+
+Buka URL Vite yang muncul di terminal, biasanya:
+
+```text
+http://localhost:5173
+```
+
+Dashboard web memakai MQTT WebSocket, jadi broker harus expose port `9001` dari `docker-compose.yml`. Tombol **Connection** di kanan atas membuka section settings terpisah untuk:
+
+- connect/disconnect MQTT broker,
+- mengubah topic root,
+- filter fridge.
+
+Dashboard web juga menyediakan CRUD **Medicold Boxes**. Operasi CRUD dikirim sebagai MQTT command ke `core`; dashboard kemudian menerima kembali snapshot box retained dari broker.
+
+Dashboard terminal tetap tersedia untuk debugging:
+
+```bash
+pnpm dashboard -- --watch --fridge-ids FRIDGE-A,FRIDGE-B --min-level INFO
 ```
 
 Daftarkan batch medis dari admin:
 
 ```bash
-npm run admin -- --action register \
+pnpm admin -- --action register \
   --fridge-id FRIDGE-A \
   --batch-id BATCH-001 \
   --content VACCINE \
@@ -127,27 +195,27 @@ npm run admin -- --action register \
 Kirim telemetry streaming dari sensor:
 
 ```bash
-npm run sensor -- --fridge-id FRIDGE-A --scenario normal --readings 20 --interval-ms 1000
+pnpm sensor -- --fridge-id FRIDGE-A --scenario normal --readings 20 --interval-ms 1000
 ```
 
 Coba skenario anomali:
 
 ```bash
-npm run sensor -- --fridge-id FRIDGE-A --scenario temp_rise --readings 20 --interval-ms 500
-npm run sensor -- --fridge-id FRIDGE-B --scenario power_fail --readings 20 --interval-ms 500
-npm run sensor -- --fridge-id FRIDGE-C --scenario chaos --readings 20 --interval-ms 500
+pnpm sensor -- --fridge-id FRIDGE-A --scenario temp_rise --readings 20 --interval-ms 500
+pnpm sensor -- --fridge-id FRIDGE-B --scenario power_fail --readings 20 --interval-ms 500
+pnpm sensor -- --fridge-id FRIDGE-C --scenario chaos --readings 20 --interval-ms 500
 ```
 
 Lihat snapshot inventory retained:
 
 ```bash
-npm run admin -- --action list --fridge-id FRIDGE-A
+pnpm admin -- --action list --fridge-id FRIDGE-A
 ```
 
 Resolve alert dari dashboard:
 
 ```bash
-npm run dashboard -- --resolve <alert_id> --by "Dr. Rina" --notes "Kulkas sudah stabil"
+pnpm dashboard -- --resolve <alert_id> --by "Dr. Rina" --notes "Kulkas sudah stabil"
 ```
 
 ## Skenario Sensor
@@ -182,7 +250,7 @@ Nilai sensor yang tidak masuk akal secara fisik, misalnya suhu di atas 100C, aka
 Contoh:
 
 ```bash
-MQTT_BROKER_URL=mqtt://localhost:1883 npm start
+MQTT_BROKER_URL=mqtt://localhost:1883 pnpm start
 ```
 
 ## Pengujian
@@ -190,14 +258,20 @@ MQTT_BROKER_URL=mqtt://localhost:1883 npm start
 Test logic yang tidak membutuhkan broker:
 
 ```bash
-npm test
+pnpm test
+```
+
+Build dashboard web:
+
+```bash
+pnpm dashboard:web:build
 ```
 
 Test runtime manual:
 
 1. Jalankan broker.
 2. Jalankan core service.
-3. Jalankan dashboard dengan `--watch`.
+3. Jalankan dashboard web dengan `pnpm dashboard:web`.
 4. Publish data sensor dengan scenario `temp_rise`.
 5. Dashboard akan menerima snapshot retained dan event alert live.
 

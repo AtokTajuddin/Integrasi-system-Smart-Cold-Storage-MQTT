@@ -3,12 +3,18 @@
   "version": "1.0.0",
   "description": "Smart cold storage integration over MQTT with streaming telemetry and retained messages.",
   "main": "src/server/core.js",
+  "packageManager": "pnpm@11.0.9",
   "scripts": {
     "broker": "docker compose up broker",
+    "compose": "docker compose up --build",
     "start": "node src/server/core.js",
     "admin": "node src/client/admin.js",
     "sensor": "node src/client/sensor.js",
+    "dummy:sender": "node src/client/dummy_sender.js",
     "dashboard": "node src/client/dashboard.js",
+    "dashboard:web": "vite --host 0.0.0.0",
+    "dashboard:web:build": "vite build",
+    "dashboard:web:preview": "vite preview --host 0.0.0.0",
     "test": "node --test"
   },
   "keywords": [
@@ -21,9 +27,13 @@
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13"
   },
   "dependencies": {
-    "mqtt": "^5.10.4"
+    "animejs": "^4.4.1",
+    "mqtt": "^5.15.1"
+  },
+  "devDependencies": {
+    "vite": "^8.0.11"
   }
 }

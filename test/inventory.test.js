@@ -30,3 +30,22 @@ test("duplicate batch id is rejected", () => {
   registerBatch(store, payload);
   assert.throws(() => registerBatch(store, payload), /sudah terdaftar/);
 });
+
+test("dummy sender can replace existing batch idempotently", () => {
+  const store = createStore();
+  const payload = {
+    fridge_id: "FRIDGE-A",
+    batch_id: "BATCH-001",
+    quantity: 200,
+  };
+
+  registerBatch(store, payload);
+  const result = registerBatch(store, {
+    ...payload,
+    quantity: 210,
+    replace_existing: true,
+  });
+
+  assert.equal(result.inventory.total_batches, 1);
+  assert.equal(result.batch.quantity, 210);
+});
