@@ -18,6 +18,62 @@ const clientId = `medicold-core-${randomUUID()}`;
 const client = createMqttClient(clientId);
 const store = createStore();
 
+// Request-Response tracker untuk correlation_id (MQTT request-response pattern)
+class RequestResponseTracker {
+  constructor(timeoutMs = 30000) {
+    this.pending = new Map(); // correlation_id -> { resolve, reject, timeout }
+    this.timeoutMs = timeoutMs;
+  }
+
+  createRequest() {
+    const correlationId = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(correlationId);
+        reject(new Error(`Request ${correlationId} timeout after ${this.timeoutMs}ms`));
+      }, this.timeoutMs);
+
+      this.pending.set(correlationId, { resolve, reject, timeout });
+    }).then(
+      (response) => {
+        this.pending.delete(correlationId);
+        return response;
+      },
+      (error) => {
+        this.pending.delete(correlationId);
+        throw error;
+      }
+    ).catch(() => ({
+      correlationId,
+      ok: false,
+      error: { message: "Request timeout" },
+    }));
+
+    return { correlationId, promise: Promise.resolve() };
+  }
+
+  resolveRequest(correlationId, response) {
+    const pending = this.pending.get(correlationId);
+    if (!pending) {
+      console.warn(`Received response for unknown correlation_id: ${correlationId}`);
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    pending.resolve(response);
+  }
+
+  rejectRequest(correlationId, error) {
+    const pending = this.pending.get(correlationId);
+    if (!pending) return;
+
+    clearTimeout(pending.timeout);
+    pending.reject(error);
+  }
+}
+
+const rrcTracker = new RequestResponseTracker(30000); // 30 second timeout
+
 function withEnvelope(type, payload) {
   return {
     schema: "medicold.mqtt.v1",
@@ -27,7 +83,13 @@ function withEnvelope(type, payload) {
   };
 }
 
-async function publishResponse(replyTo, correlationId, response) {
+/**
+ * Publish response dengan MQTT 5.0 user properties untuk tracking
+ * - correlation_id: untuk match request-response
+ * - source: dari core service
+ * - priority: untuk alert response vs normal response
+ */
+async function publishResponse(replyTo, correlationId, response, options = {}) {
   if (!replyTo) {
     return;
   }
@@ -39,7 +101,14 @@ async function publishResponse(replyTo, correlationId, response) {
       correlation_id: correlationId,
       ...response,
     },
-    { qos: 1, retain: false },
+    {
+      qos: 1,
+      retain: false,
+      correlationId, // untuk user properties
+      source: "medicold-core",
+      priority: options.priority || (response.ok ? "normal" : "high"),
+      messageExpiryInterval: 5 * 60, // response expires dalam 5 menit
+    }
   );
 }
 
@@ -53,7 +122,14 @@ async function publishAlertState(fridgeId) {
       has_alert: Boolean(latestAlert),
       alert: latestAlert,
     }),
-    { qos: 1, retain: true },
+    {
+      qos: 1,
+      retain: true,
+      source: "medicold-core",
+      priority: latestAlert ? "high" : "normal",
+      // Retained message: expire dalam 1 jam
+      messageExpiryInterval: 3600,
+    }
   );
 }
 
@@ -65,7 +141,14 @@ async function publishBoxesSnapshot() {
       boxes: store.getBoxes(),
       total_count: store.getBoxes().length,
     }),
-    { qos: 1, retain: true },
+    {
+      qos: 1,
+      retain: true,
+      source: "medicold-core",
+      priority: "normal",
+      // Retained message: expire dalam 24 jam
+      messageExpiryInterval: 24 * 3600,
+    }
   );
 }
 
@@ -79,13 +162,21 @@ async function handleTelemetry(topic, message) {
   const inspection = inspectReading(reading);
   store.updateTelemetry(reading, inspection.status);
 
+  // Publish telemetry latest (retained snapshot)
   await publishJson(
     client,
     topics.telemetryLatest(reading.fridge_id),
     withEnvelope("telemetry.latest", reading),
-    { qos: 1, retain: true },
+    {
+      qos: 1,
+      retain: true,
+      source: "medicold-core",
+      priority: inspection.status === "CRITICAL" ? "high" : "normal",
+      messageExpiryInterval: 24 * 3600, // 24 hours
+    }
   );
 
+  // Publish status update (retained)
   await publishJson(
     client,
     topics.status(reading.fridge_id),
@@ -94,9 +185,16 @@ async function handleTelemetry(topic, message) {
       status: inspection.status,
       last_seen: new Date(reading.timestamp).toISOString(),
     }),
-    { qos: 1, retain: true },
+    {
+      qos: 1,
+      retain: true,
+      source: "medicold-core",
+      priority: inspection.status === "CRITICAL" ? "high" : "normal",
+      messageExpiryInterval: 3600, // 1 hour
+    }
   );
 
+  // Publish alert events (streaming, not retained)
   for (const alert of inspection.alerts) {
     store.addAlert(alert);
 
@@ -104,7 +202,13 @@ async function handleTelemetry(topic, message) {
       client,
       topics.alertStream(reading.fridge_id),
       withEnvelope("alert.new", alert),
-      { qos: 1, retain: false },
+      {
+        qos: 1,
+        retain: false,
+        source: "medicold-core",
+        priority: "high",
+        messageExpiryInterval: 5 * 60, // 5 minutes
+      }
     );
   }
 
@@ -119,7 +223,13 @@ async function handleInventoryRegister(message) {
       client,
       topics.inventorySnapshot(result.batch.fridge_id),
       withEnvelope("inventory.snapshot", result.inventory),
-      { qos: 1, retain: true },
+      {
+        qos: 1,
+        retain: true,
+        source: "medicold-core",
+        priority: "normal",
+        messageExpiryInterval: 24 * 3600,
+      }
     );
 
     await publishResponse(message.reply_to, message.correlation_id, {
@@ -133,7 +243,7 @@ async function handleInventoryRegister(message) {
         code: error.code || "INVALID_ARGUMENT",
         message: error.message,
       },
-    });
+    }, { priority: "high" });
   }
 }
 
@@ -145,7 +255,13 @@ async function handleResolveAlert(message) {
       client,
       topics.alertStream(alert.fridge_id),
       withEnvelope("alert.resolved", alert),
-      { qos: 1, retain: false },
+      {
+        qos: 1,
+        retain: false,
+        source: "medicold-core",
+        priority: "normal",
+        messageExpiryInterval: 5 * 60,
+      }
     );
 
     await publishAlertState(alert.fridge_id);
@@ -161,7 +277,7 @@ async function handleResolveAlert(message) {
         code: error.code || "INVALID_ARGUMENT",
         message: error.message,
       },
-    });
+    }, { priority: "high" });
   }
 }
 
@@ -193,7 +309,13 @@ async function handleBoxUpsert(message) {
       client,
       topics.boxSnapshot(box.fridge_id),
       withEnvelope("box.snapshot", box),
-      { qos: 1, retain: true },
+      {
+        qos: 1,
+        retain: true,
+        source: "medicold-core",
+        priority: "normal",
+        messageExpiryInterval: 24 * 3600,
+      }
     );
 
     await publishBoxesSnapshot();
@@ -209,7 +331,7 @@ async function handleBoxUpsert(message) {
         code: "INVALID_ARGUMENT",
         message: error.message,
       },
-    });
+    }, { priority: "high" });
   }
 }
 
@@ -227,7 +349,7 @@ async function handleBoxDelete(message) {
         code: "INVALID_ARGUMENT",
         message: "fridge_id box wajib diisi",
       },
-    });
+    }, { priority: "high" });
     return;
   }
 
@@ -237,7 +359,13 @@ async function handleBoxDelete(message) {
     client,
     topics.boxSnapshot(fridgeId),
     withEnvelope("box.deleted", result),
-    { qos: 1, retain: true },
+    {
+      qos: 1,
+      retain: true,
+      source: "medicold-core",
+      priority: "normal",
+      messageExpiryInterval: 24 * 3600,
+    }
   );
 
   await publishBoxesSnapshot();
