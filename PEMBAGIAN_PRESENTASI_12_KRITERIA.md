@@ -48,30 +48,34 @@ Menjelaskan bagaimana sistem menangani putus koneksi (LWT), komunikasi dua arah,
 
 ---
 
-### 📌 SESI 2: Oleh Anggota B
+### 📌 SESI 2: Oleh Anggota B (Buka Terminal Baru)
 
 **7. Last Will and Testament / LWT (Kriteria 7)**
-* **Aksi:** Putuskan/hentikan paksa kontainer/script `dummy:sender` (sensor). Tunjukkan log di web dashboard atau terminal backend.
-* **Penjelasan:** "Untuk mendeteksi apakah sebuah sensor/kulkas mati mendadak (putus koneksi), kami mengatur pesan wasiat atau **Last Will and Testament (LWT)** saat sensor terkoneksi ke broker. Jadi, saat saya matikan sensor secara paksa (demonstrasikan), Broker akan menyadari bahwa sensor putus (tanpa `disconnect` resmi) dan broker otomatis mempublikasikan pesan LWT ke topik `medicold/FRIDGE-A/status` dengan payload `STATUS_OFFLINE`."
+* **Aksi:** Buka terminal dan hentikan paksa sensor dengan perintah:
+  `docker stop medicold-dummy-sender`
+* **Penjelasan:** "Untuk mendeteksi apakah sebuah sensor/kulkas mati mendadak, kami mengatur pesan wasiat atau **Last Will and Testament (LWT)**. Saat saya matikan sensor secara paksa tadi, Broker otomatis menyadari koneksi terputus lalu mengirimkan pesan LWT ke topik `medicold/FRIDGE-A/status` dengan status OFFLINE (Anda bisa lihat perubahannya di Dashboard)."
+* *(Catatan: Nyalakan kembali sensor dengan `docker start medicold-dummy-sender` setelah demo ini)*
 
 **8. Request-Response Pattern (Kriteria 8)**
-* **Aksi:** Buka terminal baru dan jalankan `npm run admin` atau command spesifik yang meminta data (misal: mengambil daftar stok inventory/box).
-* **Penjelasan:** "Selain Publish-Subscribe, kami juga mengimplementasikan pola **Request-Response** menggunakan MQTT v5. Klien Admin mempublikasikan *request* ke suatu topik komando, sambil menyertakan properti `Response Topic` dan `Correlation ID`. Server akan merespon tepat di topik yang diminta tersebut. Hal ini membuat MQTT bisa digunakan selayaknya API konvensional (RPC)."
+* **Aksi:** Di terminal, jalankan perintah ini untuk meminta data:
+  `npm run admin` *(Tadi sempat error, tapi sudah saya perbaiki di kode Anda!)*
+* **Penjelasan:** "Selain Publish-Subscribe biasa, kami menggunakan pola **Request-Response** dari MQTT v5. Klien Admin baru saja mempublikasikan *request* pendaftaran barang. Server merespon tepat di topik balasan (Reply Topic) yang diminta oleh Admin. Hal ini membuat MQTT bisa digunakan selayaknya API."
 
 **9. Shared Subscription (Kriteria 9)**
-* **Aksi:** Jalankan dua atau lebih instance dari `core.js` secara bersamaan.
-* **Penjelasan:** "Untuk memenuhi kriteria ke-9 dan mencegah *bottleneck* di backend saat jumlah sensor ribuan, kami memakai **Shared Subscription**. Kedua backend kami men-subscribe dengan format `$share/medicold_group/medicold/+/telemetry/stream`. Dengan begini, Broker akan melakukan *load-balancing* pola *Round-Robin*. Pesan dari kulkas A dikerjakan Server 1, kulkas B dikerjakan Server 2."
+* **Aksi:** Buka satu terminal lagi, lalu jalankan manual server core kedua:
+  `npm run start` *(Biarkan berjalan bersamaan dengan server Docker)*
+* **Penjelasan:** "Untuk memenuhi kriteria ke-9 dan mencegah *bottleneck* saat jumlah sensor banyak, kami memakai **Shared Subscription**. Saat ini ada 2 server backend yang berjalan. Keduanya men-subscribe dengan format `$share/medicold_group/...`. Broker akan melakukan *load-balancing* pola *Round-Robin* sehingga beban dibagi rata ke kedua server."
 
 **10. Flow Control / Overload Scenario (Kriteria 10)**
-* **Aksi:** Gunakan tool load test atau `mqtt-control-tool.js` untuk membanjiri broker dengan puluhan pesan per detik.
-* **Penjelasan:** "Kami menggunakan fitur MQTT v5 **Receive Maximum** sebagai mekanisme **Flow Control**. Jika sensor tiba-tiba error dan membanjiri broker dengan pesan (Overload Scenario), limit `receiveMaximum` dan `maximumPacketSize` pada konfigurasi klien dan broker akan menahan banjir data, memastikan server *core* tidak crash atau kehabisan memori (*out of memory*)."
+* **Aksi:** Buka file `src/server/core.js` dan tunjukkan bagian saat client dibuat (fungsi `createMqttClient` yang menggunakan properties Receive Maximum).
+* **Penjelasan:** "Untuk menahan skenario Overload, kami menggunakan fitur **Receive Maximum** dari MQTT v5 sebagai **Flow Control**. Batasan ini memastikan server *core* menahan jumlah antrian pesan maksimum yang diproses secara bersamaan agar memori server tidak penuh atau crash ketika dibanjiri data."
 
 **11. Dashboard Monitoring (Kriteria 11)**
-* **Aksi:** Buka dan navigasikan Web Dashboard di `http://localhost:5173`.
-* **Penjelasan:** "Semua data yang mengalir, retained message, LWT status, dan alert anomali divisualisasikan pada **Dashboard Monitoring** ini. Dashboard di-build dengan Vite dan terhubung ke broker via WebSockets (`ws://localhost:9001`). Kami men-subscribe topik dari browser secara langsung untuk mendapat delay sekecil mungkin."
+* **Aksi:** Buka web browser di `http://localhost:5173`. Klik-klik UI-nya.
+* **Penjelasan:** "Semua aliran data dari topik yang dibahas tadi divisualisasikan pada **Dashboard Monitoring** secara real-time. Dashboard ini menggunakan Vue/Vite dan terkoneksi langsung ke broker MQTT melalui WebSocket di port 9001."
 
 **12. Presentasi & Pemahaman Konsep (Kriteria 12)**
-* **Penjelasan Bersama:** "Itulah 11 fitur utama MQTT v5 yang kami terapkan di proyek Smart Cold Storage ini untuk menjadikannya reliabel, *scalable*, dan responsif. Kami siap menjawab pertanyaan jika ada yang perlu didalami."
+* **Penjelasan Bersama:** "Itulah keseluruhan dari 11 kriteria arsitektur MQTT v5 yang kami terapkan untuk membuat Smart Cold Storage ini tangguh dan efisien. Terima kasih!"
 
 ---
 
