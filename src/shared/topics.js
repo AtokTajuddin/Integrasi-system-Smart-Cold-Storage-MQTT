@@ -10,6 +10,18 @@ function topicFridgeId(fridgeId) {
   return String(fridgeId).trim().replaceAll("/", "_");
 }
 
+function topicGroupId(groupId) {
+  if (!groupId) {
+    throw new Error("shared subscription group wajib diisi");
+  }
+
+  return String(groupId).trim().replaceAll("/", "_");
+}
+
+function sharedSubscription(groupId, topicPattern) {
+  return `$share/${topicGroupId(groupId)}/${topicPattern}`;
+}
+
 const topics = {
   root: ROOT,
 
@@ -94,6 +106,14 @@ function parseTopic(topic) {
     };
   }
 
+  if (parts[1] === "replies") {
+    return {
+      root: parts[0],
+      scope: "replies",
+      clientId: parts[2],
+    };
+  }
+
   return {
     root: parts[0],
     scope: "fridge",
@@ -107,6 +127,8 @@ function parseTopic(topic) {
 module.exports = {
   ROOT,
   parseTopic,
+  sharedSubscription,
   topicFridgeId,
+  topicGroupId,
   topics,
 };

@@ -41,13 +41,15 @@ const BROKER_URL = process.env.MQTT_BROKER_URL || "mqtt://localhost:1883";
 **File:** [src/client/dummy_sender.js](src/client/dummy_sender.js)
 
 ### Data yang dikirim:
-3 Fridge simulasi dengan scenario berbeda:
+5 Fridge simulasi dengan scenario berbeda:
 
 | Fridge ID | Location | Content | Scenario | Batches |
 |-----------|----------|---------|----------|---------|
 | FRIDGE-A | Ruang Farmasi Lt. 2 | VACCINE | temp_rise | VAC-2026-001, VAC-2026-018, MED-BOOST-07 |
 | FRIDGE-B | Lab Hematologi | BLOOD_SAMPLE | power_fail | BLD-A24-002, BLD-B19-006 |
 | FRIDGE-C | ICU Storage | MEDICINE | chaos | INS-2201, ANT-7742, IVD-1200, MED-445A |
+| FRIDGE-D | Ruang Operasi | MEDICINE | normal | ANA-1004, SED-4412 |
+| FRIDGE-E | Gudang Vaksin Cadangan | VACCINE | door_open | VAC-RES-009, VAC-RES-014 |
 
 ### Alur publishing:
 ```javascript
@@ -391,4 +393,3 @@ docker exec -it [broker-container-id] mosquitto_sub -h localhost -t 'medicold/+/
 - Semua log terlihat jelas
 - Live streaming setiap 900ms
 - Real-time updates ke frontend
-

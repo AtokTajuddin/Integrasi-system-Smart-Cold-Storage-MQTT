@@ -15,6 +15,8 @@
     "dashboard:web": "vite --host 0.0.0.0",
     "dashboard:web:build": "vite build",
     "dashboard:web:preview": "vite preview --host 0.0.0.0",
+    "mqtt:control": "node mqtt-control-tool.js",
+    "mqtt:validate": "node validate-mqtt.js",
     "test": "node --test"
   },
   "keywords": [

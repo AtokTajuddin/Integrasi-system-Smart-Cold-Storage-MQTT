@@ -16,6 +16,21 @@ Dokumentasi lengkap untuk melakukan demo sistem integrasi cold storage medis ber
 
 ---
 
+## ✅ Ringkasan Kesiapan Rubrik
+
+| Rubrik | Status | Bukti Demo |
+|--------|--------|------------|
+| Wildcard & topic hierarchy | ✅ Lengkap | Core subscribe `medicold/+/telemetry/stream`, dashboard subscribe snapshot/alert wildcard |
+| Retained message | ✅ Lengkap | Refresh dashboard tetap menerima `telemetry/latest`, `status`, `inventory/snapshot`, `boxes/snapshot` |
+| QoS | ✅ Lengkap | Semua publish/subscribe utama memakai QoS 1 |
+| MQTT 5.0 metadata | ✅ Lengkap | `messageExpiryInterval`, user properties, topic alias otomatis, dan Last Will |
+| Request-response | ✅ Lengkap | Command memakai `correlation_id`, `reply_to`, dan response di `medicold/replies/{clientId}` |
+| Streaming realtime | ✅ Lengkap | Sensor/dummy publish telemetry live, core publish alert stream non-retained |
+| Dashboard/monitoring | ✅ Lengkap | Web dashboard + CLI validator/control tool |
+| Skenario anomali | ✅ Lengkap | Normal, temperature rise, door open, power fail, chaos, multi-fridge |
+
+---
+
 ## 📦 Persyaratan
 
 ### Hardware Minimal
@@ -47,9 +62,9 @@ docker compose up --build
 **Output yang diharapkan:**
 ```
 broker   | mosquitto version 2.0.18 starting
-core     | medicold-core-xxxxx ready, subscribing to telemetry...
-dummy-sender | Publishing initial box registry...
-dashboard | VITE running at http://localhost:5173
+core     | Medicold MQTT core is ready
+dummy-sender | Publishing initial box registry and inventory snapshots...
+dashboard | Local: http://localhost:5173/
 ```
 
 **Akses dashboard:**
@@ -151,8 +166,8 @@ pnpm sensor -- --fridgeId FRIDGE-A --scenario temp_rise
 
 ### **5. Dummy Sender** (`src/client/dummy_sender.js`)
 - **Tipe**: Node.js publisher automation
-- **Fungsi**: Auto-publish box registry dan inventory setiap interval
-- **Frekuensi**: Setiap 5-10 detik
+- **Fungsi**: Auto-publish 5 box registry, inventory, dan telemetry dummy
+- **Frekuensi**: Telemetry setiap ~900ms, seed box/inventory setiap 30 detik
 
 ---
 
@@ -192,14 +207,14 @@ pnpm sensor -- --fridgeId FRIDGE-A --scenario temp_rise
    ```
 2. **Observasi**:
    - Temperature naik progresif: 4.5°C → 16°C
-   - Status berubah: NORMAL → WARNING → CRITICAL
+   - Status berubah: NORMAL → WARNING → CRITICAL → EMERGENCY
    - **Alert muncul** di dashboard dengan timestamp
    - Red glow di scene animation
    - Retained alert message disimpan di `medicold/FRIDGE-B/alerts/latest`
 
 **Key Point untuk Penjelasan**:
 - ✅ Core service menjalankan `inspectReading()` setiap data
-- ✅ Threshold checking: CRITICAL jika temp > 8°C
+- ✅ Threshold checking: WARNING jika temp ≥ 6°C, CRITICAL jika temp > 8°C, EMERGENCY jika temp > 10°C
 - ✅ Publish live event ke `medicold/FRIDGE-B/alerts/stream` (retain=false)
 - ✅ Publish latest alert ke `medicold/FRIDGE-B/alerts/latest` (retain=true)
 
@@ -215,14 +230,14 @@ pnpm sensor -- --fridgeId FRIDGE-A --scenario temp_rise
    pnpm sensor -- --fridgeId FRIDGE-C --scenario door_open --readings 30 --intervalMs 1000
    ```
 2. **Observasi**:
-   - `door_open: true` selama progress 35-90%
-   - Status: NORMAL → WARNING
-   - Alert event: "Door open for Xs" muncul
+   - `door_open: true` selama progress 35-90%, durasi simulasi naik sampai ~45 detik
+   - Status: NORMAL → WARNING → CRITICAL
+   - Alert event: "Pintu terbuka selama X detik" muncul
    - Dashboard menampilkan warning state
 
 **Key Point untuk Penjelasan**:
 - ✅ Logic dalam `inspectReading()` cek `door_open_duration_seconds`
-- ✅ Warning jika door > 30 detik
+- ✅ Warning saat pintu mulai terbuka, CRITICAL jika durasi > 30 detik
 
 ---
 
@@ -237,14 +252,14 @@ pnpm sensor -- --fridgeId FRIDGE-A --scenario temp_rise
    ```
 2. **Observasi**:
    - Saat power_fail: temperature naik ke ~9-10°C
-   - Status: NORMAL → CRITICAL
+   - Status: NORMAL → CRITICAL/EMERGENCY
    - Multiple alerts: Power + Temperature
    - Red animation di dashboard
 
 **Key Point untuk Penjelasan**:
 - ✅ Sensor report `power_stable: false`
 - ✅ Anomaly detection: multiple triggers sekaligus
-- ✅ Priority: CRITICAL > WARNING > NORMAL
+- ✅ Priority: EMERGENCY > CRITICAL > WARNING > NORMAL
 
 ---
 
@@ -333,7 +348,7 @@ pnpm sensor -- --fridgeId FRIDGE-A --scenario temp_rise
 |-------|-----------|--------|-----|--------|
 | `medicold/{id}/telemetry/stream` | Sensor → Core | ❌ | 1 | Live streaming data, tidak disimpan |
 | `medicold/{id}/telemetry/latest` | Core → Sub | ✅ | 1 | Last reading snapshot untuk subscriber baru |
-| `medicold/{id}/status` | Core → Sub | ✅ | 1 | Status: NORMAL/WARNING/CRITICAL |
+| `medicold/{id}/status` | Core → Sub | ✅ | 1 | Status: STATUS_NORMAL/WARNING/CRITICAL/EMERGENCY |
 | `medicold/{id}/alerts/stream` | Core → Dashboard | ❌ | 1 | Live alert events |
 | `medicold/{id}/alerts/latest` | Core → Sub | ✅ | 1 | Current active alert |
 | `medicold/{id}/inventory/commands/register` | Admin → Core | ❌ | 1 | Command batch register (tidak retained) |
@@ -436,8 +451,9 @@ Dashboard subscribe & display
 ```
 
 **Thresholds**:
-- **CRITICAL**: temp > 8°C OR power_fail OR door > 30s
-- **WARNING**: temp 6-8°C OR humidity abnormal
+- **EMERGENCY**: temp > 10°C OR temp < 0°C OR power_fail
+- **CRITICAL**: temp > 8°C OR door > 30s
+- **WARNING**: temp 6-8°C OR humidity abnormal OR door mulai terbuka
 - **NORMAL**: semua aman
 
 ---
@@ -516,7 +532,7 @@ Sensor (4.5°C) → publish → Broker → Core read → Store
 **Alert Flow**:
 ```
 Sensor (15°C) → publish → Broker → Core read → Store
-                                  → check CRITICAL ⚠️
+                                  → check EMERGENCY ⚠️
                                   → generate alert
                                   → publish alerts/stream
                                   → publish alerts/latest

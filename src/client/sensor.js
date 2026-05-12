@@ -43,7 +43,7 @@ function buildReading(options) {
   if (options.scenario === "door_open") {
     base.door_open = progress > 0.35 && progress < 0.9;
     base.door_open_duration_seconds = base.door_open
-      ? Math.round((progress - 0.35) * options.total)
+      ? Math.round(((progress - 0.35) / 0.55) * 45)
       : 0;
   }
 

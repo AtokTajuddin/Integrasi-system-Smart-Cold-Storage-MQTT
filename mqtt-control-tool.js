@@ -275,7 +275,14 @@ class MQTTControlTool {
     }
 
     const topic = args[0];
-    const messageStr = args.slice(1).join(" ");
+    const messageParts = args.slice(1);
+    const propertyParts = [];
+
+    while (messageParts.length > 1 && /^[a-zA-Z][\w-]*=/.test(messageParts.at(-1))) {
+      propertyParts.unshift(messageParts.pop());
+    }
+
+    const messageStr = messageParts.join(" ");
 
     let message = null;
     try {
@@ -287,8 +294,26 @@ class MQTTControlTool {
     const options = {
       qos: 1,
       retain: false,
-      messageExpiryInterval: 5 * 60, // Default 5 menit
+      properties: {
+        messageExpiryInterval: 5 * 60, // Default 5 menit
+      },
     };
+
+    for (const property of propertyParts) {
+      const [key, rawValue] = property.split("=", 2);
+      const value = rawValue === "true" ? true : rawValue === "false" ? false : rawValue;
+
+      if (key === "qos") {
+        options.qos = Number(value);
+      } else if (key === "retain") {
+        options.retain = Boolean(value);
+      } else if (key === "expiry") {
+        options.properties.messageExpiryInterval = Number(value);
+      } else if (key === "priority" || key === "source" || key === "correlation-id") {
+        options.properties.userProperties = options.properties.userProperties || {};
+        options.properties.userProperties[key] = String(value);
+      }
+    }
 
     this.client.publish(
       topic,

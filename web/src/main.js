@@ -85,6 +85,13 @@ function parseTopic(topicName) {
     };
   }
 
+  if (parts[1] === "replies") {
+    return {
+      scope: "replies",
+      clientId: parts[2],
+    };
+  }
+
   return {
     scope: "fridge",
     fridgeId: parts[1],
@@ -613,6 +620,14 @@ function handleSystem(envelope) {
   }
 }
 
+function handleReply(topicName, envelope) {
+  const ok = envelope.ok === true;
+  pushEvent({
+    topic: topicName,
+    type: ok ? "command-response-ok" : "command-response-error",
+  });
+}
+
 function handleMessage(topicName, payload, packet = {}) {
   const parsed = parseTopic(topicName);
   const envelope = parsePayload(payload);
@@ -626,6 +641,13 @@ function handleMessage(topicName, payload, packet = {}) {
     state.retainedCount += 1;
   } else {
     state.liveCount += 1;
+  }
+
+  if (parsed.scope === "replies") {
+    handleReply(topicName, envelope);
+    render();
+    animateIncoming(topicName);
+    return;
   }
 
   if (parsed.scope === "system") {
@@ -662,6 +684,7 @@ function subscribeDashboardTopics(client) {
     topic("+/box/snapshot"),
     topic("system/boxes/snapshot"),
     topic("system/status"),
+    topic("system/client-status"),
     topic(`replies/${state.clientId}`),
   ];
 

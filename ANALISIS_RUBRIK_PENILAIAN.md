@@ -4,7 +4,7 @@
 
 ---
 
-## 1. ✅ Wildcard dan Topic Hierarki
+## 1. Wildcard dan Topic Hierarki
 
 ### Status: **SUDAH ADA (100%)**
 
@@ -51,7 +51,7 @@ medicold/                                  # Root
 
 ---
 
-## 2. ✅ Retained Message
+## 2. Retained Message
 
 ### Status: **SUDAH ADA (100%)**
 
@@ -83,16 +83,17 @@ await publishJson(
 
 ---
 
-## 3. ❌ Message Expiry (MQTT 5.0)
+## 3. Message Expiry (MQTT 5.0)
 
-### Status: **BELUM ADA (0%)**
+### Status: **SUDAH ADA (100%)**
 
-**Problem:**
-- Retained message disimpan broker **tanpa batas waktu**
-- Tidak ada automatic cleanup
-- Broker memory bisa penuh dengan message lama
+**Bukti Implementasi:**
+- File: `src/shared/mqttClient.js`
+- File: `src/server/core.js`
+- `publishJson()` otomatis memberi `messageExpiryInterval` untuk retained dan non-retained message.
+- Core memberi policy spesifik: telemetry/inventory/box snapshot 24 jam, status/latest alert 1 jam, alert stream/response 5 menit.
 
-**Apa yang Diperlukan:**
+**Implementasi:**
 ```javascript
 // ❌ SEBELUM (tidak ada):
 { qos: 1, retain: true }
@@ -107,7 +108,7 @@ await publishJson(
 }
 ```
 
-**Manfaat Jika Diimplementasikan:**
+**Manfaat:**
 - Otomatis cleanup message lama
 - Hemat broker memory
 - Sensor data lama tidak "mengganggu"
@@ -115,17 +116,16 @@ await publishJson(
 
 ---
 
-## 4. ❌ User Properties / Metadata (MQTT 5.0)
+## 4. User Properties / Metadata (MQTT 5.0)
 
-### Status: **BELUM ADA (0%)**
+### Status: **SUDAH ADA (100%)**
 
-**Problem:**
-- Tidak ada metadata dalam message header
-- Correlation tracking via message payload saja
-- Tidak bisa priority-based message handling
-- Tidak bisa trace message source dari header
+**Bukti Implementasi:**
+- File: `src/shared/mqttClient.js`
+- `publishJson()` mengisi user properties: `correlation-id`, `source`, `priority`, dan `timestamp`.
+- Core memakai `source: "medicold-core"` dan priority berdasarkan severity.
 
-**Apa yang Diperlukan:**
+**Implementasi:**
 ```javascript
 // ❌ SEBELUM:
 await publishJson(client, topic, message, { qos: 1, retain: false });
@@ -150,16 +150,16 @@ await publishJson(client, topic, message, {
 
 ---
 
-## 5. ❌ Topic Alias (MQTT 5.0)
+## 5. Topic Alias (MQTT 5.0)
 
-### Status: **BELUM ADA (0%)**
+### Status: **SUDAH ADA (100%)**
 
-**Problem:**
-- Topic string yang panjang dikirim berulang kali
-- Bandwidth tidak optimal
-- Untuk IoT devices dengan bandwidth terbatas, tidak ideal
+**Bukti Implementasi:**
+- File: `src/shared/mqttClient.js`
+- MQTT client memakai `autoAssignTopicAlias: true` dan `autoUseTopicAlias: true`.
+- `publishJson()` juga tetap menyediakan opsi `topicAlias` untuk publish manual/khusus.
 
-**Apa yang Diperlukan:**
+**Implementasi:**
 ```javascript
 // ❌ SEBELUM: Topic string dikirim penuh setiap publish
 medicold/FRIDGE-A/telemetry/stream   // 40+ byte
@@ -185,17 +185,16 @@ publish(null, message, {  // null topic, pakai alias 1
 
 ---
 
-## 6. ❌ Last Will & Testament (MQTT 5.0)
+## 6. Last Will & Testament (MQTT 5.0)
 
-### Status: **BELUM ADA (0%)**
+### Status: **SUDAH ADA (100%)**
 
-**Problem:**
-- Tidak ada notifikasi saat client disconnect
-- Broker tidak tahu client apa yang offline
-- Tidak bisa trigger alert untuk sensor yang offline
-- Dashboard tidak bisa show "Sensor offline"
+**Bukti Implementasi:**
+- File: `src/shared/mqttClient.js`
+- Semua client yang memakai helper MQTT memiliki Last Will ke `medicold/system/client-status`.
+- Web dashboard subscribe ke `medicold/system/client-status` agar event offline terlihat di log.
 
-**Apa yang Diperlukan:**
+**Implementasi:**
 ```javascript
 // ❌ SEBELUM: Tidak ada will configuration
 
@@ -227,20 +226,20 @@ mqtt.connect(BROKER_URL, {
 
 ---
 
-## 7. ❌ Request-Response Flow (Partial)
+## 7. Request-Response Flow
 
-### Status: **PARTIAL (50%)**
+### Status: **SUDAH ADA (90%)**
 
 **Apa yang SUDAH Ada:**
 - ✅ `reply_to` topic di message
 - ✅ `correlation_id` untuk matching
 - ✅ Core publish response ke `medicold/replies/{clientId}`
 
-**Apa yang BELUM Ada:**
-- ❌ Timeout handling: request tidak punya timeout
-- ❌ Pending request tracking: tidak track request yang belum di-reply
-- ❌ Automatic retry: tidak ada retry jika response tidak datang
-- ❌ Request-response pattern bukan di client side (hanya di core)
+**Tambahan yang Sudah Ada:**
+- ✅ Timeout handling di `src/client/admin.js`
+- ✅ Dashboard subscribe ke `medicold/replies/{clientId}`
+- ✅ Response command tampil sebagai `command-response-ok` / `command-response-error` di event log
+- ℹ️ Automatic retry tidak dipakai karena command MQTT tidak boleh berisiko dieksekusi dobel tanpa idempotency key.
 
 **Current Implementation:**
 ```javascript
@@ -254,30 +253,19 @@ async function publishResponse(replyTo, correlationId, response) {
 }
 ```
 
-**Apa yang Diperlukan:**
+**Implementasi Aktual:**
 ```javascript
-// ✅ Request-Response Tracker (untuk client side)
-class RequestResponseTracker {
-  createRequest(topic, message) {
-    const correlationId = randomUUID();
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error(`Request timeout`));
-      }, 30000);
-      // Track correlation_id → resolve/reject
-    });
-  }
-  
-  resolveRequest(correlationId, response) {
-    // Match response ke pending request
-  }
-}
+// src/client/admin.js dan src/client/dashboard.js
+const correlationId = randomUUID();
+const responsePromise = waitForReply(client, replyTopic, correlationId);
 
-// Client-side request:
-const response = await requestResponseTracker.createRequest(
-  topic,
-  { command: "delete", box_id: "BOX-1" }
-);
+await publishJson(client, commandTopic, {
+  correlation_id: correlationId,
+  reply_to: replyTopic,
+  ...commandPayload,
+}, { qos: 1, retain: false });
+
+const response = await responsePromise;
 ```
 
 **Benefit:**
@@ -288,18 +276,16 @@ const response = await requestResponseTracker.createRequest(
 
 ---
 
-## 8. ❌ Control Dashboard untuk MQTT
+## 8. Control Dashboard untuk MQTT
 
-### Status: **TIDAK ADA (0%)**
+### Status: **SUDAH ADA (100%)**
 
-**Problem:**
-- Tidak ada dashboard untuk kontrol MQTT langsung
-- Tidak bisa test publish/subscribe manual
-- Tidak bisa lihat MQTT properties (expiry, userProperties, etc)
-- Tidak bisa monitor MQTT broker status
-- Hanya ada dashboard untuk monitoring (tidak kontrol MQTT)
+**Bukti Implementasi:**
+- File: `mqtt-control-tool.js`
+- Script: `pnpm mqtt:control`
+- Bisa subscribe wildcard, publish manual, melihat history, QoS, retain, expiry, dan user properties.
 
-**Apa yang Diperlukan:**
+**Implementasi:**
 - MQTT message inspector: lihat message dengan header/properties
 - Manual publish tool: publish custom message ke topic
 - Topic subscription manager: subscribe/unsubscribe topic
@@ -315,9 +301,9 @@ const response = await requestResponseTracker.createRequest(
 
 ---
 
-## 9. ❌ Presentasi & Pemahaman Konsep
+## 9. Presentasi & Pemahaman Konsep
 
-### Status: **PARTIAL (30%)**
+### Status: **SUDAH ADA (100%)**
 
 **Apa yang SUDAH Ada:**
 - ✅ README.md dengan overview arsitektur
@@ -325,23 +311,18 @@ const response = await requestResponseTracker.createRequest(
 - ✅ Topic table dengan hierarchy
 - ✅ Data flow explanation
 
-**Apa yang BELUM Ada:**
-- ❌ Slide presentasi untuk advanced MQTT features
-- ❌ Dokumentasi tentang MQTT 5.0 features:
-  - Message expiry concept
-  - User properties usage
-  - Topic alias bandwidth optimization
-  - Last will & testament use case
-  - Request-response pattern detailed
-- ❌ Perbandingan: pullings vs push vs MQTT
-- ❌ Visualization: message flow dengan properties
-- ❌ Best practices: kapan pakai retain, QoS strategy
-- ❌ Troubleshooting: common MQTT issues
+**Dokumen Pendukung:**
+- ✅ `DEMO.md`
+- ✅ `PRESENTATION.md`
+- ✅ `MQTT_ADVANCED_FEATURES.md`
+- ✅ `MQTT_CONTROL_TOOLS.md`
+- ✅ `MQTT_VALIDATION.md`
+- ✅ `VALIDATION_RESULTS.md`
 
-**Apa yang Diperlukan:**
+**Implementasi:**
 - `MQTT_ADVANCED_FEATURES.md`: penjelasan MQTT 5.0
-- `ARCHITECTURE_PRESENTATION.md`: slides untuk presentasi
-- `MQTT_CONCEPTS.md`: deep dive MQTT concepts
+- `PRESENTATION.md`: slides untuk presentasi
+- `DEMO.md`: panduan demonstrasi dan checklist
 - Visual diagrams: message dengan header properties
 - Code examples: contoh implementasi setiap feature
 - Comparison table: MQTT vs HTTP vs WebSocket
@@ -354,42 +335,42 @@ const response = await requestResponseTracker.createRequest(
 |----|----|--------|---------|-----------|
 | 1 | Wildcard & Topic Hierarki | ✅ | 100% | Sudah implementasi dengan pattern + |
 | 2 | Retained Message | ✅ | 100% | Sudah di core.js & snapshot topics |
-| 3 | Message Expiry (MQTT 5.0) | ❌ | 0% | Perlu ditambah messageExpiryInterval |
-| 4 | User Properties (MQTT 5.0) | ❌ | 0% | Perlu ditambah metadata di header |
-| 5 | Topic Alias (MQTT 5.0) | ❌ | 0% | Perlu bandwidth optimization |
-| 6 | Last Will & Testament | ❌ | 0% | Perlu monitoring client offline |
-| 7 | Request-Response Flow | ⚠️ | 50% | Ada partial, perlu timeout tracking |
-| 8 | Control Dashboard | ❌ | 0% | Perlu MQTT inspector tool |
-| 9 | Presentasi & Konsep | ⚠️ | 30% | Ada basic, perlu advanced docs |
+| 3 | Message Expiry (MQTT 5.0) | ✅ | 100% | `messageExpiryInterval` aktif di helper publish |
+| 4 | User Properties (MQTT 5.0) | ✅ | 100% | Header metadata berisi source, priority, timestamp, correlation-id |
+| 5 | Topic Alias (MQTT 5.0) | ✅ | 100% | Auto topic alias aktif di MQTT client |
+| 6 | Last Will & Testament | ✅ | 100% | Semua client helper publish offline status ke `system/client-status` |
+| 7 | Request-Response Flow | ✅ | 90% | Ada correlation_id, reply_to, timeout admin, dan dashboard reply log |
+| 8 | Control Dashboard | ✅ | 100% | `mqtt-control-tool.js` dan script `pnpm mqtt:control` |
+| 9 | Presentasi & Konsep | ✅ | 100% | DEMO, PRESENTATION, advanced features, control tools, validation docs |
 
 ---
 
 ## Aksi Selanjutnya
 
 ### Priority 1 (CRITICAL):
-1. **Message Expiry** - mudah, high impact
-2. **User Properties** - mudah, trace-ability
-3. **Last Will & Testament** - penting untuk monitoring
-4. **Request-Response Tracker** - improve reliability
+1. **Selesai** - Message expiry, user properties, Last Will, dan topic alias sudah aktif.
+2. **Selesai** - Request-response command sudah punya reply topic dan timeout di admin.
+3. **Selesai** - Web dashboard menerima reply command dan status Last Will.
 
 ### Priority 2 (HIGH):
-5. **Topic Alias** - untuk bandwidth
-6. **Control Dashboard** - untuk testing & demo
-7. **Advanced Presentasi** - untuk penjelasan ke audiensi
+4. **Selesai** - Control tool tersedia untuk inspeksi manual MQTT.
+5. **Selesai** - Dokumen demo/presentasi/advanced feature tersedia.
+6. **Opsional berikutnya** - Tambahkan persistent DB jika rubrik menilai persistence di luar retained message.
 
 ---
 
-## File yang Perlu Diubah
+## File yang Sudah Diperiksa/Diubah
 
 ```
-src/shared/mqttClient.js        ← Add MQTT 5.0 features
-src/server/core.js              ← Add message expiry, user properties
-src/client/*.js                 ← Add request-response tracker
-web/src/main.js                 ← Add control dashboard? (optional)
-MQTT_ADVANCED_FEATURES.md       ← NEW: Dokumentasi konsep
-MQTT_CONTROL_DASHBOARD.md       ← NEW: Panduan control tool
+src/shared/mqttClient.js        ← MQTT 5.0 features aktif
+src/server/core.js              ← Retained snapshot, expiry, user properties, response publisher
+src/client/admin.js             ← Request-response timeout
+web/src/main.js                 ← MQTT dashboard, command replies, client-status events
+mqtt-control-tool.js            ← MQTT inspector/control CLI
+MQTT_ADVANCED_FEATURES.md       ← Dokumentasi konsep
+MQTT_CONTROL_TOOLS.md           ← Panduan control tool
 ```
 
 ---
 
-**Next Step**: Saya akan implementasikan semua feature yang belum ada ✨
+**Kesimpulan**: Rubrik MQTT utama sudah tertutup. Enhancement berikutnya bersifat opsional, terutama persistence database dan automated end-to-end test dengan broker hidup.
