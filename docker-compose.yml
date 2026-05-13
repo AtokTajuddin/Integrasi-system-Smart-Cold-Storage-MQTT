@@ -21,6 +21,7 @@ services:
     environment:
       MQTT_BROKER_URL: mqtt://broker:1883
       MQTT_TOPIC_ROOT: medicold
+      MQTT_SHARED_GROUP: medicold-core-group
     command: pnpm start
 
   dashboard:

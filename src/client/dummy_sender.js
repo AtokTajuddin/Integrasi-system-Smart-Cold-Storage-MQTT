@@ -52,6 +52,32 @@ const boxes = [
       { batch_id: "MED-445A", content_type: "MEDICINE", quantity: 71 },
     ],
   },
+  {
+    fridge_id: "FRIDGE-D",
+    location: "Ruang Operasi",
+    medical_content: "MEDICINE",
+    base_temperature: 4.6,
+    base_humidity: 41,
+    base_pressure: 1000,
+    scenario: "normal",
+    batches: [
+      { batch_id: "ANA-1004", content_type: "MEDICINE", quantity: 34 },
+      { batch_id: "SED-4412", content_type: "MEDICINE", quantity: 28 },
+    ],
+  },
+  {
+    fridge_id: "FRIDGE-E",
+    location: "Gudang Vaksin Cadangan",
+    medical_content: "VACCINE",
+    base_temperature: 4.4,
+    base_humidity: 44,
+    base_pressure: 1003,
+    scenario: "door_open",
+    batches: [
+      { batch_id: "VAC-RES-009", content_type: "VACCINE", quantity: 96 },
+      { batch_id: "VAC-RES-014", content_type: "VACCINE", quantity: 104 },
+    ],
+  },
 ];
 
 function sleep(ms) {
@@ -90,6 +116,13 @@ function buildReading(box, tick) {
     if (!reading.power_stable) {
       reading.temperature_celsius = 9.5 + wave(tick, 1.1);
     }
+  }
+
+  if (box.scenario === "door_open") {
+    reading.door_open = progress > 0.35 && progress < 0.9;
+    reading.door_open_duration_seconds = reading.door_open
+      ? Math.round(((progress - 0.35) / 0.55) * 45)
+      : 0;
   }
 
   if (box.scenario === "chaos") {
@@ -158,6 +191,7 @@ async function main() {
 
   let tick = 0;
   await sleep(2000);
+  console.log("Publishing initial box registry and inventory snapshots...");
   await seed(client);
 
   setInterval(() => {

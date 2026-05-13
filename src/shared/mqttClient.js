@@ -29,6 +29,8 @@ function createMqttClient(clientId, options = {}) {
     connectTimeout: 5000,
     keepalive: 30,
     reconnectPeriod: 1000,
+    autoAssignTopicAlias: options.autoAssignTopicAlias ?? true,
+    autoUseTopicAlias: options.autoUseTopicAlias ?? true,
     
     // Last Will & Testament: publish when client unexpectedly disconnects
     will: {
@@ -72,7 +74,7 @@ function waitForConnect(client) {
 function publishJson(client, topic, message, options = {}) {
   return new Promise((resolve, reject) => {
     // User properties untuk metadata dan correlation tracking
-    const userProperties = options.userProperties || {};
+    const userProperties = { ...(options.userProperties || {}) };
     if (options.correlationId) {
       userProperties["correlation-id"] = options.correlationId;
     }
@@ -81,6 +83,9 @@ function publishJson(client, topic, message, options = {}) {
     }
     if (options.priority) {
       userProperties["priority"] = options.priority; // "critical", "high", "normal", "low"
+    }
+    if (options.timestamp !== false) {
+      userProperties["timestamp"] = new Date().toISOString();
     }
 
     const publishOptions = {

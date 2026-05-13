@@ -9,7 +9,7 @@ const {
   subscribe,
   waitForConnect,
 } = require("../shared/mqttClient");
-const { parseTopic, topics } = require("../shared/topics");
+const { parseTopic, sharedSubscription, topics } = require("../shared/topics");
 const { inspectReading } = require("./logic/anomaly");
 const { registerBatch } = require("./logic/inventory");
 const { createStore } = require("./stateStore");
@@ -17,62 +17,7 @@ const { createStore } = require("./stateStore");
 const clientId = `medicold-core-${randomUUID()}`;
 const client = createMqttClient(clientId);
 const store = createStore();
-
-// Request-Response tracker untuk correlation_id (MQTT request-response pattern)
-class RequestResponseTracker {
-  constructor(timeoutMs = 30000) {
-    this.pending = new Map(); // correlation_id -> { resolve, reject, timeout }
-    this.timeoutMs = timeoutMs;
-  }
-
-  createRequest() {
-    const correlationId = randomUUID();
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(correlationId);
-        reject(new Error(`Request ${correlationId} timeout after ${this.timeoutMs}ms`));
-      }, this.timeoutMs);
-
-      this.pending.set(correlationId, { resolve, reject, timeout });
-    }).then(
-      (response) => {
-        this.pending.delete(correlationId);
-        return response;
-      },
-      (error) => {
-        this.pending.delete(correlationId);
-        throw error;
-      }
-    ).catch(() => ({
-      correlationId,
-      ok: false,
-      error: { message: "Request timeout" },
-    }));
-
-    return { correlationId, promise: Promise.resolve() };
-  }
-
-  resolveRequest(correlationId, response) {
-    const pending = this.pending.get(correlationId);
-    if (!pending) {
-      console.warn(`Received response for unknown correlation_id: ${correlationId}`);
-      return;
-    }
-
-    clearTimeout(pending.timeout);
-    pending.resolve(response);
-  }
-
-  rejectRequest(correlationId, error) {
-    const pending = this.pending.get(correlationId);
-    if (!pending) return;
-
-    clearTimeout(pending.timeout);
-    pending.reject(error);
-  }
-}
-
-const rrcTracker = new RequestResponseTracker(30000); // 30 second timeout
+const sharedGroup = process.env.MQTT_SHARED_GROUP || "";
 
 function withEnvelope(type, payload) {
   return {
@@ -81,6 +26,22 @@ function withEnvelope(type, payload) {
     emitted_at: new Date().toISOString(),
     payload,
   };
+}
+
+function priorityForStatus(status) {
+  if (String(status).includes("EMERGENCY") || String(status).includes("CRITICAL")) {
+    return "high";
+  }
+
+  if (String(status).includes("WARNING")) {
+    return "normal";
+  }
+
+  return "low";
+}
+
+function coreSubscription(topicPattern) {
+  return sharedGroup ? sharedSubscription(sharedGroup, topicPattern) : topicPattern;
 }
 
 /**
@@ -171,7 +132,7 @@ async function handleTelemetry(topic, message) {
       qos: 1,
       retain: true,
       source: "medicold-core",
-      priority: inspection.status === "CRITICAL" ? "high" : "normal",
+      priority: priorityForStatus(inspection.status),
       messageExpiryInterval: 24 * 3600, // 24 hours
     }
   );
@@ -189,7 +150,7 @@ async function handleTelemetry(topic, message) {
       qos: 1,
       retain: true,
       source: "medicold-core",
-      priority: inspection.status === "CRITICAL" ? "high" : "normal",
+      priority: priorityForStatus(inspection.status),
       messageExpiryInterval: 3600, // 1 hour
     }
   );
@@ -436,18 +397,22 @@ async function main() {
     { qos: 1, retain: true },
   );
 
-  await subscribe(client, topics.patterns.telemetryStream);
-  await subscribe(client, topics.patterns.inventoryRegister);
-  await subscribe(client, topics.patterns.resolveAlert);
-  await subscribe(client, topics.patterns.boxUpsert);
-  await subscribe(client, topics.patterns.boxDelete);
+  const subscriptions = [
+    coreSubscription(topics.patterns.telemetryStream),
+    coreSubscription(topics.patterns.inventoryRegister),
+    coreSubscription(topics.patterns.resolveAlert),
+    coreSubscription(topics.patterns.boxUpsert),
+    coreSubscription(topics.patterns.boxDelete),
+  ];
+
+  for (const subscription of subscriptions) {
+    await subscribe(client, subscription);
+  }
 
   console.log("Medicold MQTT core is ready");
-  console.log(`Subscribed: ${topics.patterns.telemetryStream}`);
-  console.log(`Subscribed: ${topics.patterns.inventoryRegister}`);
-  console.log(`Subscribed: ${topics.patterns.resolveAlert}`);
-  console.log(`Subscribed: ${topics.patterns.boxUpsert}`);
-  console.log(`Subscribed: ${topics.patterns.boxDelete}`);
+  subscriptions.forEach((subscription) => {
+    console.log(`Subscribed: ${subscription}`);
+  });
 }
 
 client.on("message", handleMessage);

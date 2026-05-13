@@ -6,6 +6,7 @@ const { highestSeverity } = require("./severity");
 const SAFE_LIMITS = {
   temperatureCelsius: {
     min: 2,
+    warningHigh: 6,
     max: 8,
     emergencyMin: 0,
     emergencyMax: 10,
@@ -119,6 +120,17 @@ function inspectReading(reading) {
           : SAFE_LIMITS.temperatureCelsius.min,
       ),
     );
+  } else if (temperature >= SAFE_LIMITS.temperatureCelsius.warningHigh) {
+    alerts.push(
+      alert(
+        "TEMPERATURE_APPROACHING_LIMIT",
+        "WARNING",
+        reading,
+        `Suhu ${temperature.toFixed(1)}C mendekati batas atas cold storage medis`,
+        temperature,
+        SAFE_LIMITS.temperatureCelsius.max,
+      ),
+    );
   }
 
   if (humidity < SAFE_LIMITS.humidityPercent.min || humidity > SAFE_LIMITS.humidityPercent.max) {
@@ -156,6 +168,17 @@ function inspectReading(reading) {
       alert(
         "DOOR_OPEN_TOO_LONG",
         "CRITICAL",
+        reading,
+        `Pintu terbuka selama ${doorOpenDuration} detik`,
+        doorOpenDuration,
+        SAFE_LIMITS.doorOpenSecondsMax,
+      ),
+    );
+  } else if (reading.door_open) {
+    alerts.push(
+      alert(
+        "DOOR_OPEN",
+        "WARNING",
         reading,
         `Pintu terbuka selama ${doorOpenDuration} detik`,
         doorOpenDuration,
